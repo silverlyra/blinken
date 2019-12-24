@@ -8,9 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lucasb-eyer/go-colorful"
-
 	"lyra.codes/blinken/artnet"
+	"lyra.codes/blinken/color"
 	"lyra.codes/blinken/dmx"
 )
 
@@ -36,6 +35,12 @@ func main() {
 		return
 	}
 
+	fmt.Println("Polling for nodes")
+	if err := transport.Send(artnet.Broadcast, artnet.NewPoll()); err != nil {
+		fmt.Printf("Failed to poll: %v\n", err)
+		return
+	}
+	time.Sleep(5 * time.Second)
 	if err := transport.Send(artnet.Broadcast, artnet.NewPoll()); err != nil {
 		fmt.Printf("Failed to poll: %v\n", err)
 		return
@@ -47,38 +52,29 @@ func main() {
 	port := node.Ports[0]
 	fmt.Printf("Rendering to port %s (%08b)\n", port.Address, port.Type)
 
-	uni := make(dmx.Universe, 512)
-	colors := make([]colorful.Color, 10)
-	v := 0.3
-	d := 0.02
+	var q uint8
 	s := 0
-	q := uint8(0)
+	uni := make(dmx.Universe, 512)
+	colors := make([]color.RGBW, 50)
+
 	for {
-		for i := 0; i < 10; i++ {
-			h := float64((int(float64(i)/10*360) + s) % 360)
-			colors[i] = colorful.Hcl(h, 1.0, v).Clamped()
+		for i := 0; i < len(colors); i++ {
+			h := float64((int(float64(i+s) / float64(len(colors)) * 360)) % 360)
 			fmt.Printf("%.0f ", h)
+			colors[i] = color.HSI{h, 0.6, 0.4}.RGBW()
 		}
 		fmt.Println()
-		dmx.RGB(uni).Spread(0, colors)
+		fmt.Println(colors[0].String())
+		dmx.RGBW(uni).Spread(0, colors)
 
 		if err := transport.Send(node.NetworkAddress, artnet.NewDMX(port.Address, q, uni)); err != nil {
 			fmt.Printf("Failed to render: %v\n", err)
 			return
 		}
+
+		s = (s + 1) % len(colors)
 		q++
-
-		v += d
-		if v >= 1.0 {
-			v = 1.0
-			d = -0.02
-		} else if v <= 0.3 {
-			v = 0.3
-			d = 0.02
-			s += 2
-		}
-		fmt.Printf("%d, v=%.1f, d=%.2f\n", q, v, d)
-
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(time.Second)
+		fmt.Println()
 	}
 }
